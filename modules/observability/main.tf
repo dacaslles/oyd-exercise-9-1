@@ -2,6 +2,7 @@ terraform {
   required_providers {
     aws = {
       source                = "hashicorp/aws"
+      version               = "~> 5.0"
       configuration_aliases = [aws.us_east_1]
     }
   }
@@ -14,12 +15,25 @@ resource "aws_cloudwatch_log_group" "finapi_dev" {
 
 
 resource "aws_sns_topic" "finapi_alerts" {
-  name = "finapi-alerts"
+  provider = aws.us_east_1
+  name     = "finapi-alerts"
 }
 
 
 resource "aws_sns_topic_subscription" "email_notifications" {
+  provider  = aws.us_east_1
   topic_arn = aws_sns_topic.finapi_alerts.arn
+  protocol  = "email"
+  endpoint  = var.notification_email
+}
+
+resource "aws_sns_topic" "finapi_alerts_regional" {
+  name = "finapi-alerts-regional"
+}
+
+
+resource "aws_sns_topic_subscription" "email_notifications_regional" {
+  topic_arn = aws_sns_topic.finapi_alerts_regional.arn
   protocol  = "email"
   endpoint  = var.notification_email
 }
@@ -40,11 +54,12 @@ resource "aws_cloudwatch_metric_alarm" "http_5xx_errors" {
     LoadBalancer = var.alb_arn_suffix
   }
 
-  alarm_actions = [aws_sns_topic.finapi_alerts.arn]
-  ok_actions    = [aws_sns_topic.finapi_alerts.arn]
+  alarm_actions = [aws_sns_topic.finapi_alerts_regional.arn]
+  ok_actions    = [aws_sns_topic.finapi_alerts_regional.arn]
 }
 
 resource "aws_iam_role" "budget_notification_role" {
+  provider = aws.us_east_1
   name = "finapi-budget-notification-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
@@ -61,6 +76,7 @@ resource "aws_iam_role" "budget_notification_role" {
 }
 
 resource "aws_iam_role_policy" "budget_notification_policy" {
+  provider = aws.us_east_1
   name = "finapi-budget-notification-policy"
   role = aws_iam_role.budget_notification_role.id
   policy = jsonencode({
@@ -76,6 +92,7 @@ resource "aws_iam_role_policy" "budget_notification_policy" {
 }
 
 resource "aws_budgets_budget" "monthly_finapi" {
+  provider     = aws.us_east_1
   name         = "finapi-monthly-cost"
   budget_type  = "COST"
   limit_amount = var.monthly_budget_usd
@@ -87,7 +104,7 @@ resource "aws_budgets_budget" "monthly_finapi" {
     threshold                  = 80
     threshold_type             = "PERCENTAGE"
     notification_type          = "ACTUAL"
-    subscriber_email_addresses = [var.notification_email]
+    subscriber_sns_topic_arns  = [aws_sns_topic.finapi_alerts.arn]
   }
 }
 
@@ -125,6 +142,6 @@ resource "aws_cloudwatch_metric_alarm" "target_response_time" {
     LoadBalancer = var.alb_arn_suffix
   }
 
-  alarm_actions = [aws_sns_topic.finapi_alerts.arn]
-  ok_actions    = [aws_sns_topic.finapi_alerts.arn]
+  alarm_actions = [aws_sns_topic.finapi_alerts_regional.arn]
+  ok_actions    = [aws_sns_topic.finapi_alerts_regional.arn]
 }
